@@ -1,6 +1,6 @@
 extern crate nalgebra as na;
 
-use na::{Matrix2, Vector2, UnitVector2};
+use na::{Matrix2, UnitVector2, Vector2};
 
 #[allow(non_snake_case)]
 pub struct ILOS {
@@ -30,26 +30,38 @@ impl ILOS {
         }
     }
 
-    pub fn update(&mut self, pos: Vector2<f64>, pos_d: Vector2<f64>, tau: UnitVector2<f64>, dt: f64) {
+    pub fn update(
+        &mut self,
+        pos: Vector2<f64>,
+        pos_d: Vector2<f64>,
+        tau: UnitVector2<f64>,
+        dt: f64,
+    ) {
         let k = self.k;
         let c = self.c;
 
         let cross_track_err = (pos - pos_d).dot(&(self.S * tau.into_inner()));
-        let mu = (tau.into_inner() - (k * cross_track_err + c * self.integral_state) * self.S * tau.into_inner()) / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2) ).sqrt();
+        let mu = (tau.into_inner()
+            - (k * cross_track_err + c * self.integral_state) * self.S * tau.into_inner())
+            / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2)).sqrt();
 
         let yaw_angle_prev = self.yaw_angle;
         self.yaw_angle = mu[1].atan2(mu[0]);
         self.yaw_rate = ssa(ssa(self.yaw_angle) - ssa(yaw_angle_prev)) / dt;
-        
-        let alpha_dot = k * cross_track_err / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2) ).sqrt();
+
+        let alpha_dot = k * cross_track_err
+            / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2)).sqrt();
         self.integral_state += alpha_dot * dt;
+    }
+
+    pub fn get_references(&self) -> (f64, f64) {
+        (self.yaw_angle, self.yaw_rate)
     }
 }
 
-
 pub fn ssa(ang: f64) -> f64 {
     let pi = core::f64::consts::PI;
-     modulo(ang + pi, 2.0 * pi)  - pi 
+    modulo(ang + pi, 2.0 * pi) - pi
 }
 
 fn modulo(m: f64, n: f64) -> f64 {

@@ -1,6 +1,6 @@
 extern crate nalgebra as na;
 
-use na::{Vector2, UnitVector2};
+use na::{UnitVector2, Vector2};
 
 use crate::path::Path;
 
@@ -14,10 +14,7 @@ impl Line {
     pub fn new(pos_0: Vector2<f64>, pos_1: Vector2<f64>) -> Line {
         let angle = (pos_1[1] - pos_0[1]).atan2(pos_1[0] - pos_0[0]);
         // println!("angle: {}", angle);
-        Line {
-            angle,
-            pos_0,
-        }
+        Line { angle, pos_0 }
     }
 }
 
@@ -31,6 +28,7 @@ impl Path for Line {
         self.pos_0 + Vector2::new(self.angle.cos(), self.angle.sin()) * theta
     }
 
+    #[allow(unused_variables)]
     fn comp_tangent(&self, theta: f64) -> UnitVector2<f64> {
         let tangent = Vector2::new(self.angle.cos(), self.angle.sin());
         UnitVector2::new_normalize(tangent)

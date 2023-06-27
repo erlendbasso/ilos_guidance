@@ -1,6 +1,6 @@
-pub mod ilos;
 pub mod circle;
-pub mod waypoints;
+pub mod ilos;
 pub mod line;
+pub mod waypoints;
 
 mod path;

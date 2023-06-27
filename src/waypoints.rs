@@ -1,9 +1,9 @@
 extern crate nalgebra as na;
 
-use na::{Vector2, Matrix2, UnitVector2};
+use crate::circle::Circle;
 use crate::line::Line;
-use crate::circle::{Circle, self};
 use crate::path::Path;
+use na::{Matrix2, UnitVector2, Vector2};
 
 #[derive(Clone, Debug)]
 enum PathSegment {
@@ -27,8 +27,8 @@ impl WaypointPath {
     pub fn new(waypoints: Vec<Vector2<f64>>, circle_radius: f64) -> WaypointPath {
         let mut lines = Vec::new();
         let mut circles = Vec::new();
-        let mut theta_circ_min = Vec::new(); 
-        let mut theta_circ_max = Vec::new(); 
+        let mut theta_circ_min = Vec::new();
+        let mut theta_circ_max = Vec::new();
         let mut theta_line_min = Vec::new();
         let mut theta_line_max = Vec::new();
 
@@ -37,14 +37,14 @@ impl WaypointPath {
         theta_line_min.push(-f64::INFINITY);
 
         for i in 1..waypoints.len() {
-            let line : Line = Line::new(waypoints[i - 1], waypoints[i]);
+            let line: Line = Line::new(waypoints[i - 1], waypoints[i]);
             lines.push(line);
         }
         let mut v = (waypoints[1] - waypoints[0]).normalize();
-        
+
         for i in 0..waypoints.len() - 2 {
-            let v_next = (waypoints[i+2] - waypoints[i+1]).normalize();
-            let d = circle_radius * ((S * v).dot(&v_next)).abs() / (1.0 + v.dot(&v_next)) ;
+            let v_next = (waypoints[i + 2] - waypoints[i + 1]).normalize();
+            let d = circle_radius * ((S * v).dot(&v_next)).abs() / (1.0 + v.dot(&v_next));
             let q = (S * v).dot(&v_next).signum();
             let clockwise = q < 0.0;
             // if clockwise {
@@ -53,16 +53,14 @@ impl WaypointPath {
             //     println!("counter-clockwise");
             // }
 
-
             let theta_max_line = lines[i].comp_theta(&(waypoints[i + 1] - d * v));
-            let theta_min_line = lines[i+1].comp_theta(&(waypoints[i + 1] + d * v_next));
+            let theta_min_line = lines[i + 1].comp_theta(&(waypoints[i + 1] + d * v_next));
             theta_line_min.push(theta_min_line);
 
             theta_line_max.push(theta_max_line);
 
-
             let pos_circle = waypoints[i + 1] - d * v + q * circle_radius * S * v;
-            let circle : Circle = Circle::new(circle_radius, pos_circle, clockwise);
+            let circle: Circle = Circle::new(circle_radius, pos_circle, clockwise);
             circles.push(circle);
 
             let theta_min_circ = circles[i].comp_theta(&(waypoints[i + 1] - d * v));
@@ -82,7 +80,6 @@ impl WaypointPath {
         // println!("theta_line_max: {:?}", theta_line_max);
         // println!("waypoints: {:?}", waypoints);
 
-
         WaypointPath {
             // waypoints,
             current_waypoint: 1,
@@ -96,7 +93,10 @@ impl WaypointPath {
         }
     }
 
-    pub fn comp_pos_tangent_refs(&mut self, pos: &Vector2<f64>) -> (Vector2<f64>, UnitVector2<f64>) {
+    pub fn comp_pos_tangent_refs(
+        &mut self,
+        pos: &Vector2<f64>,
+    ) -> (Vector2<f64>, UnitVector2<f64>) {
         match self.current_path_segment {
             PathSegment::Line => {
                 // println!("current_waypoint: {}", pos);
@@ -104,25 +104,23 @@ impl WaypointPath {
                 if theta > self.theta_line_max[self.current_waypoint - 1] {
                     // self.current_waypoint += 1;
                     self.current_path_segment = PathSegment::Circle;
-                }
-                else if theta < self.theta_line_min[self.current_waypoint - 1] {
+                } else if theta < self.theta_line_min[self.current_waypoint - 1] {
                     self.current_waypoint -= 1;
                     // println!("GOING BACK TO PREVIOUS WAYPOINT");
                     self.current_path_segment = PathSegment::Circle;
                 }
-            },
+            }
             PathSegment::Circle => {
                 let theta = self.circles[self.current_waypoint - 1].comp_theta(pos);
                 // println!("current waypoint: {}", self.current_waypoint);
                 // println!("theta: {}", theta);
-                if theta > self.theta_circ_max[self.current_waypoint - 1]  {
+                if theta > self.theta_circ_max[self.current_waypoint - 1] {
                     self.current_waypoint += 1;
                     self.current_path_segment = PathSegment::Line;
-                }
-                else if theta < self.theta_circ_min[self.current_waypoint - 1] {
+                } else if theta < self.theta_circ_min[self.current_waypoint - 1] {
                     self.current_path_segment = PathSegment::Line;
                 }
-            },
+            }
         };
 
         let theta = match self.current_path_segment {
@@ -143,12 +141,10 @@ impl WaypointPath {
         // println!("tau: {:?}", tau);
         (pos, tau)
     }
-
-
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
 
     #[test]
@@ -169,10 +165,9 @@ mod tests{
         ];
         let mut wp_path = WaypointPath::new(waypoints, radius);
 
-        wtr.write_record(&[
-            "pos_x","pos_y","tau_x","tau_y",
-        ]).unwrap();
-        
+        wtr.write_record(&["pos_x", "pos_y", "tau_x", "tau_y"])
+            .unwrap();
+
         // println!("pos: {}", pos);
         let (mut pos, mut tau) = wp_path.comp_pos_tangent_refs(&pos);
         println!("pos: {}", pos);
@@ -184,7 +179,8 @@ mod tests{
             &pos[1].to_string(),
             &tau[0].to_string(),
             &tau[1].to_string(),
-        ]).unwrap();
+        ])
+        .unwrap();
 
         for _i in 0..100000 {
             pos_m += 0.0005 * tau.into_inner();
@@ -194,8 +190,8 @@ mod tests{
                 &pos[1].to_string(),
                 &tau[0].to_string(),
                 &tau[1].to_string(),
-            ]).unwrap();
-            
+            ])
+            .unwrap();
         }
         wtr.flush();
     }
