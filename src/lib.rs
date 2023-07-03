@@ -3,4 +3,7 @@ pub mod ilos;
 pub mod line;
 pub mod waypoints;
 
-mod path;
+pub mod path;
+
+#[cfg(feature = "zenoh")]
+pub mod zenoh_tools;

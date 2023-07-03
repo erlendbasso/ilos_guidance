@@ -18,7 +18,7 @@ impl Circle {
 }
 
 impl Path for Circle {
-    fn comp_theta(&self, pos: &Vector2<f64>) -> f64 {
+    fn comp_theta(&mut self, pos: &Vector2<f64>) -> f64 {
         self.q * (pos[1] - self.center[1]).atan2(pos[0] - self.center[0])
         // (pos[1] - self.center[1])/(pos[0] - self.center[0]).atan()
     }

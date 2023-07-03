@@ -32,9 +32,9 @@ impl ILOS {
 
     pub fn update(
         &mut self,
-        pos: Vector2<f64>,
-        pos_d: Vector2<f64>,
-        tau: UnitVector2<f64>,
+        pos: &Vector2<f64>,
+        pos_d: &Vector2<f64>,
+        tau: &UnitVector2<f64>,
         dt: f64,
     ) {
         let k = self.k;

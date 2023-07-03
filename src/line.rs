@@ -19,7 +19,7 @@ impl Line {
 }
 
 impl Path for Line {
-    fn comp_theta(&self, pos: &Vector2<f64>) -> f64 {
+    fn comp_theta(&mut self, pos: &Vector2<f64>) -> f64 {
         // println!("pos: {}, pos_0: {}", pos, self.pos_0);
         (pos - self.pos_0).dot(&(Vector2::new(self.angle.cos(), self.angle.sin())))
     }
