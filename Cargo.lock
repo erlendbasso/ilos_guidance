@@ -959,7 +959,9 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_derive",
+ "serde_json",
  "tokio",
+ "uhlc",
  "zenoh",
 ]
 

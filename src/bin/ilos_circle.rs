@@ -28,6 +28,12 @@ struct Args {
     /// Center of the circle
     #[arg(short, long, default_values_t = [0.0, 0.0])]
     center: Vec<f64>,
+    /// ILOS proportional gain
+    #[arg(short, long, default_value_t = 1.0)]
+    kp: f64,
+    /// ILOS integral gain
+    #[arg(short, long, default_value_t = 0.01)]
+    ki: f64,
 }
 
 #[tokio::main]
@@ -38,9 +44,17 @@ async fn main() {
     let output_topic_name = args.topic_out;
     let circle_radius = args.radius;
     let circle_center = Vector2::new(args.center[0], args.center[1]);
+    let kp = args.kp;
+    let ki = args.ki;
+
+    let param_topic = "ilos/params".to_string();
+
     println!("Subscribing to topic: {}", topic_name);
     println!("Controller frequency: {}", freq);
     println!("Controller period: {}", 1 / freq);
+
+    let ilos = ILOS::new(kp, ki);
+    let arc_ilos = Arc::new(Mutex::new(ilos));
 
     let session = zenoh::open(config::default())
         .res()
@@ -58,21 +72,29 @@ async fn main() {
         position_subscriber(an_session, topic_name, pos_measured).await;
     });
 
+    let an_session = session.clone();
+    let an_ilos = arc_ilos.clone();
+
+    tokio::spawn(async move {
+        update_ilos_parameters(an_session, param_topic, an_ilos).await;
+    });
+
     // let circle = Circle::new(radius, center, clockwise);
 
     let circle = Circle::new(circle_radius, circle_center, false);
 
     let an_session = session.clone();
+    let an_ilos = arc_ilos.clone();
     let pos_measured = arc_pos.clone();
     let dt = 1.0 / (freq as f64);
-    let mut ilos = ILOS::new(1.0, 0.01);
+    println!("dt: {}", dt);
 
     tokio::spawn(async move {
         ilos_timer(
             an_session,
             output_topic_name,
             pos_measured,
-            &mut ilos,
+            an_ilos,
             circle,
             dt,
         )

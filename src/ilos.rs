@@ -8,8 +8,8 @@ pub struct ILOS {
     yaw_rate: f64,
     integral_state: f64,
     S: Matrix2<f64>,
-    k: f64,
-    c: f64,
+    kp: f64,
+    ki: f64,
 }
 
 impl Default for ILOS {
@@ -25,8 +25,8 @@ impl ILOS {
             yaw_rate: 0.0,
             integral_state: 0.0,
             S: Matrix2::new(0.0, -1.0, 1.0, 0.0),
-            k: prop_gain,
-            c: integral_gain,
+            kp: prop_gain,
+            ki: integral_gain,
         }
     }
 
@@ -37,8 +37,8 @@ impl ILOS {
         tau: &UnitVector2<f64>,
         dt: f64,
     ) {
-        let k = self.k;
-        let c = self.c;
+        let k = self.kp;
+        let c = self.ki;
 
         let cross_track_err = (pos - pos_d).dot(&(self.S * tau.into_inner()));
         let mu = (tau.into_inner()
@@ -52,6 +52,15 @@ impl ILOS {
         let alpha_dot = k * cross_track_err
             / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2)).sqrt();
         self.integral_state += alpha_dot * dt;
+    }
+
+    pub fn set_gains(&mut self, prop_gain: f64, integral_gain: f64) {
+        self.kp = prop_gain;
+        self.ki = integral_gain;
+    }
+
+    pub fn get_gains(&self) -> (f64, f64) {
+        (self.kp, self.ki)
     }
 
     pub fn get_references(&self) -> (f64, f64) {

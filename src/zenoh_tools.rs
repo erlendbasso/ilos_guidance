@@ -1,21 +1,21 @@
 use crate::{ilos::ILOS, path::Path};
 
-use zenoh::{prelude::r#async::*, publication::Publisher};
-// use zenoh::config::Config;
 use cdr::{CdrLe, Infinite};
 use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use zenoh::{prelude::r#async::*, publication::Publisher};
 
+use tokio::select;
 extern crate nalgebra as na;
 use na::Vector2;
+use uhlc::*;
 
 pub async fn ilos_timer(
     session: Arc<Session>,
     topic_name: String,
     arc_pos: Arc<Mutex<Option<Vector2<f64>>>>,
-    // ilos: Arc<Mutex<ILOS>>,
-    ilos: &mut ILOS,
+    ilos: Arc<Mutex<ILOS>>,
     mut path: impl Path,
     dt: f64,
 ) {
@@ -25,14 +25,22 @@ pub async fn ilos_timer(
     loop {
         timer.tick().await;
 
-        let pos = arc_pos.lock().unwrap().unwrap();
+        let pos = {
+            let pos_guard = arc_pos.lock().unwrap();
+            if *pos_guard == None {
+                continue;
+            }
+            pos_guard.unwrap()
+        };
         let theta = path.comp_theta(&pos);
         let pos_desired = path.comp_pos(theta);
         let tau_desired = path.comp_tangent(theta);
 
-        ilos.update(&pos, &pos_desired, &tau_desired, dt);
-        let (yaw, yaw_rate) = ilos.get_references();
-
+        let (yaw, yaw_rate) = {
+            let mut ilos = ilos.lock().unwrap();
+            ilos.update(&pos, &pos_desired, &tau_desired, dt);
+            ilos.get_references()
+        };
         publish_ilos_message(&publisher, yaw, yaw_rate).await;
     }
 }
@@ -78,10 +86,79 @@ pub async fn position_subscriber(
                 let mut pos_ref = arc_pos.lock().unwrap();
                 *pos_ref = Some(pos);
             }
-            // Err(e) => log::warn!("Error decoding Log: {}", e),
             Err(e) => println!("Error decoding Odometry msg: {}", e),
         }
     }
+}
+
+pub async fn update_ilos_parameters(
+    session: Arc<Session>,
+    key_expr: String,
+    ilos: Arc<Mutex<ILOS>>,
+) {
+    let key_expr = KeyExpr::try_from(key_expr).unwrap();
+
+    let (kp, ki) = {
+        let ilos = ilos.lock().unwrap();
+        ilos.get_gains()
+    };
+    let mut ilos_params = ILOSParameters {
+        proportional_gain: kp,
+        integral_gain: ki,
+    };
+
+    let hlc = HLC::default();
+
+    println!("Declaring Parameter Subscriber on '{key_expr}'...");
+    let subscriber = session.declare_subscriber(&key_expr).res().await.unwrap();
+
+    println!("Declaring Parameter Queryable on '{key_expr}'...");
+    let queryable = session
+        .declare_queryable(&key_expr)
+        // .complete(complete)
+        .res()
+        .await
+        .unwrap();
+
+    loop {
+        select!(
+            sample = subscriber.recv_async() => {
+                let sample = sample.unwrap();
+                let data = sample.value.payload.contiguous().into_owned();
+                match serde_json::from_str(String::from_utf8(data).unwrap().as_str()) {
+                    Ok(params) => {
+                        ilos_params = params;
+                        let mut ilos = ilos.lock().unwrap();
+                        println!(">> [Subscriber] Received ILOS Parameters: {:?}", ilos_params);
+                        ilos.set_gains(ilos_params.proportional_gain, ilos_params.integral_gain);
+                    }
+                    Err(e) => println!("Error decoding ILOS parameter msg: {}", e),
+                }
+            },
+
+            query = queryable.recv_async() => {
+                let query = query.unwrap();
+                println!(">> [Queryable ] Received Query '{}'", query.selector());
+
+                let encoded = serde_json::to_string(&ilos_params).unwrap().into_bytes();
+                let ts = hlc.new_timestamp();
+
+                let mut value = Value::empty();
+                value.encoding = Encoding::Exact(KnownEncoding::AppJson);
+                value.payload = encoded.into();
+
+                let mut sample = Sample::new(key_expr.clone(), value);
+                sample.timestamp = Some(ts);
+                query.reply(Ok(sample)).res().await.unwrap();
+            }
+        );
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+struct ILOSParameters {
+    proportional_gain: f64,
+    integral_gain: f64,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
