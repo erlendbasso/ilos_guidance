@@ -1,4 +1,4 @@
-use ilos_guidance::{circle::Circle, ilos::ILOS, zenoh_tools::*};
+use ilos_guidance::{paths::circle::Circle, ilos::ILOS, zenoh_tools::*};
 
 use zenoh::prelude::r#async::*;
 // use serde_derive::{Deserialize, Serialize};

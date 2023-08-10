@@ -26,4 +26,3 @@ zenoh = ["dep:zenoh", "dep:tokio", "dep:serde", "dep:serde_derive", "dep:cdr", "
 [[bin]]
 name = "ilos_circle"
 required-features = ["zenoh"]
-

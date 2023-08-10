@@ -1,8 +1,9 @@
 extern crate nalgebra as na;
 
-use crate::circle::Circle;
-use crate::line::Line;
-use crate::path::Path;
+// use crate::circle::Circle;
+use crate::paths::circle::Circle;
+use crate::paths::line::Line;
+use crate::paths::path::Path;
 use na::{Matrix2, UnitVector2, Vector2};
 
 #[derive(Clone, Debug)]

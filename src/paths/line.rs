@@ -2,7 +2,7 @@ extern crate nalgebra as na;
 
 use na::{UnitVector2, Vector2};
 
-use crate::path::Path;
+use crate::paths::path::Path;
 
 #[derive(Clone)]
 pub struct Line {

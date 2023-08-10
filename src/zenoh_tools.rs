@@ -1,4 +1,4 @@
-use crate::{ilos::ILOS, path::Path};
+use crate::{ilos::ILOS, paths::path::Path};
 
 use cdr::{CdrLe, Infinite};
 use serde_derive::{Deserialize, Serialize};
