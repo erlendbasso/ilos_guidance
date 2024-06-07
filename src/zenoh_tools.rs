@@ -9,7 +9,6 @@ use zenoh::{prelude::r#async::*, publication::Publisher};
 use tokio::select;
 extern crate nalgebra as na;
 use na::Vector2;
-use uhlc::*;
 
 pub async fn ilos_timer(
     session: Arc<Session>,
@@ -107,8 +106,6 @@ pub async fn update_ilos_parameters(
         integral_gain: ki,
     };
 
-    let hlc = HLC::default();
-
     println!("Declaring Parameter Subscriber on '{key_expr}'...");
     let subscriber = session.declare_subscriber(&key_expr).res().await.unwrap();
 
@@ -141,14 +138,12 @@ pub async fn update_ilos_parameters(
                 println!(">> [Queryable ] Received Query '{}'", query.selector());
 
                 let encoded = serde_json::to_string(&ilos_params).unwrap().into_bytes();
-                let ts = hlc.new_timestamp();
 
                 let mut value = Value::empty();
                 value.encoding = Encoding::Exact(KnownEncoding::AppJson);
                 value.payload = encoded.into();
 
-                let mut sample = Sample::new(key_expr.clone(), value);
-                sample.timestamp = Some(ts);
+                let sample = Sample::new(key_expr.clone(), value);
                 query.reply(Ok(sample)).res().await.unwrap();
             }
         );

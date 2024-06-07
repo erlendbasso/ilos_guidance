@@ -962,7 +962,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
- "uhlc",
  "zenoh",
 ]
 

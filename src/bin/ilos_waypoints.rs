@@ -1,4 +1,4 @@
-use ilos_guidance::{paths::{circle::Circle, waypoint_path::WaypointPath}, ilos::ILOS, zenoh_tools::*};
+use ilos_guidance::{ilos::ILOS, paths::waypoint_path::WaypointPath, zenoh_tools::*};
 
 use zenoh::prelude::r#async::*;
 // use serde_derive::{Deserialize, Serialize};

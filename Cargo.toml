@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 nalgebra = {version ="0.32", features = ["serde-serialize"]}
-csv = "1.1"
+csv = "1"
 tokio = { version = "1", features = ["full"], optional = true }
 zenoh = { git = "https://github.com/eclipse-zenoh/zenoh.git", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
@@ -16,13 +16,12 @@ serde_json = {version = "1", optional = true}
 serde_yaml = {version = "0.9", optional = true}
 cdr = {version = "0.2.4", optional = true}
 clap = {version = "4", features = ["derive"], optional = true}
-uhlc = {version = "0.6", optional = true}
 
 [profile.test] 
 opt-level = 3
 
 [features]
-zenoh = ["dep:zenoh", "dep:tokio", "dep:serde", "dep:serde_derive", "dep:cdr", "dep:clap", "dep:serde_json", "dep:uhlc", "dep:serde_yaml"]
+zenoh = ["dep:zenoh", "dep:tokio", "dep:serde", "dep:serde_derive", "dep:cdr", "dep:clap", "dep:serde_json", "dep:serde_yaml"]
 
 [[bin]]
 name = "ilos_circle"
