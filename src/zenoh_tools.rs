@@ -4,7 +4,12 @@ use cdr::{CdrLe, Infinite};
 use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use zenoh::{prelude::r#async::*, publication::Publisher};
+// use zenoh::publication::Publisher;
+use zenoh::bytes::Encoding;
+use zenoh::key_expr::KeyExpr;
+use zenoh::prelude::*;
+use zenoh::pubsub::Publisher;
+use zenoh::Session;
 
 use tokio::select;
 extern crate nalgebra as na;
@@ -18,7 +23,7 @@ pub async fn ilos_timer(
     mut path: impl Path,
     dt: f64,
 ) {
-    let publisher = session.declare_publisher(topic_name).res().await.unwrap();
+    let publisher = session.declare_publisher(topic_name).await.unwrap();
 
     let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
     loop {
@@ -63,7 +68,7 @@ pub async fn publish_ilos_message(publisher: &Publisher<'_>, yaw: f64, yaw_rate:
     };
 
     let encoded = cdr::serialize::<_, _, CdrLe>(&ilos_msg, Infinite).unwrap();
-    if let Err(e) = publisher.put(encoded).res().await {
+    if let Err(e) = publisher.put(encoded).await {
         println!("Error writing {}: {}", publisher.key_expr().as_str(), e);
     }
 }
@@ -73,11 +78,11 @@ pub async fn position_subscriber(
     topic_name: String,
     arc_pos: Arc<Mutex<Option<Vector2<f64>>>>,
 ) {
-    let subscriber = session.declare_subscriber(topic_name).res().await.unwrap();
+    let subscriber = session.declare_subscriber(topic_name).await.unwrap();
 
     while let Ok(sample) = subscriber.recv_async().await {
         match cdr::deserialize_from::<_, Odometry, _>(
-            sample.value.payload.reader(),
+            sample.payload().reader(),
             cdr::size::Infinite,
         ) {
             Ok(odom) => {
@@ -107,13 +112,12 @@ pub async fn update_ilos_parameters(
     };
 
     println!("Declaring Parameter Subscriber on '{key_expr}'...");
-    let subscriber = session.declare_subscriber(&key_expr).res().await.unwrap();
+    let subscriber = session.declare_subscriber(&key_expr).await.unwrap();
 
     println!("Declaring Parameter Queryable on '{key_expr}'...");
     let queryable = session
         .declare_queryable(&key_expr)
         // .complete(complete)
-        .res()
         .await
         .unwrap();
 
@@ -121,7 +125,7 @@ pub async fn update_ilos_parameters(
         select!(
             sample = subscriber.recv_async() => {
                 let sample = sample.unwrap();
-                let data = sample.value.payload.contiguous().into_owned();
+                let data: Vec<u8> = sample.payload().deserialize().unwrap();
                 match serde_json::from_str(String::from_utf8(data).unwrap().as_str()) {
                     Ok(params) => {
                         ilos_params = params;
@@ -132,20 +136,30 @@ pub async fn update_ilos_parameters(
                     Err(e) => println!("Error decoding ILOS parameter msg: {}", e),
                 }
             },
-
             query = queryable.recv_async() => {
                 let query = query.unwrap();
-                println!(">> [Queryable ] Received Query '{}'", query.selector());
-
-                let encoded = serde_json::to_string(&ilos_params).unwrap().into_bytes();
-
-                let mut value = Value::empty();
-                value.encoding = Encoding::Exact(KnownEncoding::AppJson);
-                value.payload = encoded.into();
-
-                let sample = Sample::new(key_expr.clone(), value);
-                query.reply(Ok(sample)).res().await.unwrap();
+                match query.payload() {
+                    None => println!(">> [Queryable ] Received Query '{}'", query.selector()),
+                    Some(query_payload) => {
+                        // Refer to z_bytes.rs to see how to deserialize different types of message
+                        let deserialized_payload = query_payload
+                            .deserialize::<String>()
+                            .unwrap_or_else(|e| format!("{}", e));
+                        println!(
+                            ">> [Queryable ] Received Query '{}' with payload '{}'",
+                            query.selector(),
+                            deserialized_payload
+                        )
+                    }
+                }
+                let payload = serde_json::to_string(&ilos_params).unwrap().into_bytes();
+                query
+                    .reply(key_expr.clone(), payload.clone())
+                    .encoding(Encoding::APPLICATION_JSON)
+                    .await
+                    .unwrap_or_else(|e| println!(">> [Queryable ] Error sending reply: {e}"));
             }
+
         );
     }
 }

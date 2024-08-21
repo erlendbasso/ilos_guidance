@@ -1,6 +1,5 @@
-use ilos_guidance::{paths::circle::Circle, ilos::ILOS, zenoh_tools::*};
+use ilos_guidance::{ilos::ILOS, paths::circle::Circle, zenoh_tools::*};
 
-use zenoh::prelude::r#async::*;
 // use serde_derive::{Deserialize, Serialize};
 // use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -56,8 +55,7 @@ async fn main() {
     let ilos = ILOS::new(kp, ki);
     let arc_ilos = Arc::new(Mutex::new(ilos));
 
-    let session = zenoh::open(config::default())
-        .res()
+    let session = zenoh::open(zenoh::config::default())
         .await
         .unwrap()
         .into_arc();

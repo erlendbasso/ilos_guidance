@@ -1,6 +1,6 @@
 use ilos_guidance::{ilos::ILOS, paths::waypoint_path::WaypointPath, zenoh_tools::*};
 
-use zenoh::prelude::r#async::*;
+// use zenoh::prelude::r#async::*;
 // use serde_derive::{Deserialize, Serialize};
 // use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -64,8 +64,7 @@ async fn main() {
     let ilos = ILOS::new(kp, ki);
     let arc_ilos = Arc::new(Mutex::new(ilos));
 
-    let session = zenoh::open(config::default())
-        .res()
+    let session = zenoh::open(zenoh::config::default())
         .await
         .unwrap()
         .into_arc();
