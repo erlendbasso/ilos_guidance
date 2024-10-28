@@ -20,7 +20,7 @@ struct Args {
     #[arg(short, long, default_value = "blueboat/odom")]
     topic: String,
     /// Output ILOS message topic name
-    #[arg(short, long, default_value = "blueboat/yaw_refs")]
+    #[arg(short, long, default_value = "blueboat/yaw_reference")]
     topic_out: String,
     /// Frequency of the controller
     #[arg(short, long, default_value_t = 100)]
