@@ -82,10 +82,8 @@ impl WaypointPath {
             theta_line_max,
         }
     }
-}
 
-impl Path for WaypointPath {
-    fn comp_theta(&mut self, pos: &Vector2<f64>) -> f64 {
+    pub fn update_current_path_segment(&mut self, pos: &Vector2<f64>) {
         match self.current_path_segment {
             PathSegment::Line => {
                 let theta = self.lines[self.current_waypoint - 1].comp_theta(pos);
@@ -106,27 +104,93 @@ impl Path for WaypointPath {
                 }
             }
         };
+    }
+}
 
-        let theta = match self.current_path_segment {
+impl Path for WaypointPath {
+    fn comp_theta(&mut self, pos: &Vector2<f64>) -> f64 {
+        // Update path segment if necessary
+        self.update_current_path_segment(pos);
+
+        match self.current_path_segment {
             PathSegment::Line => self.lines[self.current_waypoint - 1].comp_theta(pos),
             PathSegment::Circle => self.circles[self.current_waypoint - 1].comp_theta(pos),
-        };
-        theta
+        }
     }
 
     fn comp_pos(&self, theta: f64) -> Vector2<f64> {
-        let pos = match self.current_path_segment {
+        match self.current_path_segment {
             PathSegment::Line => self.lines[self.current_waypoint - 1].comp_pos(theta),
             PathSegment::Circle => self.circles[self.current_waypoint - 1].comp_pos(theta),
-        };
-        pos
+        }
     }
 
     fn comp_tangent(&self, theta: f64) -> UnitVector2<f64> {
-        let tau = match self.current_path_segment {
+        match self.current_path_segment {
             PathSegment::Line => self.lines[self.current_waypoint - 1].comp_tangent(theta),
             PathSegment::Circle => self.circles[self.current_waypoint - 1].comp_tangent(theta),
-        };
-        tau
+        }
+    }
+}
+
+// impl AsAny for WaypointPath {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path() {
+        let mut wtr = csv::Writer::from_path("ilos_path.csv").unwrap();
+        let radius = 0.6;
+        let mut pos = Vector2::new(0.0, 0.0);
+        let waypoints = vec![
+            pos,
+            Vector2::new(1.0, 1.0),
+            Vector2::new(2.0, 0.0),
+            Vector2::new(7.0, 15.0),
+            Vector2::new(0.0, 0.0),
+            // Vector2::new(1.0, 1.0),
+            // Vector2::new(1.0, 2.0),
+            // Vector2::new(7.0, 15.0),
+            // Vector2::new(0.0, 0.0),
+        ];
+        let mut wp_path = WaypointPath::new(waypoints, radius);
+
+        wtr.write_record(&["pos_x", "pos_y", "tau_x", "tau_y"])
+            .unwrap();
+
+        // println!("pos: {}", pos);
+        let mut theta = wp_path.comp_theta(&pos);
+        pos = wp_path.comp_pos(theta);
+        let mut tau = wp_path.comp_tangent(theta);
+        // let (mut pos, mut tau) = wp_path.comp_pos_tangent_refs(&pos);
+        println!("pos: {}", pos);
+
+        let mut pos_m = pos;
+
+        wtr.write_record(&[
+            &pos[0].to_string(),
+            &pos[1].to_string(),
+            &tau[0].to_string(),
+            &tau[1].to_string(),
+        ])
+        .unwrap();
+
+        for _i in 0..50000 {
+            pos_m += 0.0005 * tau.into_inner();
+            // (pos, tau) = wp_path.comp_pos_tangent_refs(&pos_m);
+            theta = wp_path.comp_theta(&pos_m);
+            pos = wp_path.comp_pos(theta);
+            tau = wp_path.comp_tangent(theta);
+            wtr.write_record(&[
+                &pos[0].to_string(),
+                &pos[1].to_string(),
+                &tau[0].to_string(),
+                &tau[1].to_string(),
+            ])
+            .unwrap();
+        }
+        wtr.flush();
     }
 }

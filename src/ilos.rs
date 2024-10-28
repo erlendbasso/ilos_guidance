@@ -10,16 +10,17 @@ pub struct ILOS {
     S: Matrix2<f64>,
     kp: f64,
     ki: f64,
+    saturation_limit: f64,
 }
 
 impl Default for ILOS {
     fn default() -> Self {
-        Self::new(1.0, 1.0)
+        Self::new(1.0, 1.0, 10.0)
     }
 }
 
 impl ILOS {
-    pub fn new(prop_gain: f64, integral_gain: f64) -> ILOS {
+    pub fn new(prop_gain: f64, integral_gain: f64, saturation_limit: f64) -> ILOS {
         ILOS {
             yaw_angle: 0.0,
             yaw_rate: 0.0,
@@ -27,6 +28,7 @@ impl ILOS {
             S: Matrix2::new(0.0, -1.0, 1.0, 0.0),
             kp: prop_gain,
             ki: integral_gain,
+            saturation_limit,
         }
     }
 
@@ -45,13 +47,17 @@ impl ILOS {
             - (k * cross_track_err + c * self.integral_state) * self.S * tau.into_inner())
             / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2)).sqrt();
 
-        let yaw_angle_prev = self.yaw_angle;
+        // let yaw_angle_prev = self.yaw_angle;
         self.yaw_angle = mu[1].atan2(mu[0]);
-        self.yaw_rate = ssa(ssa(self.yaw_angle) - ssa(yaw_angle_prev)) / dt;
+        // self.yaw_rate = ssa(ssa(self.yaw_angle) - ssa(yaw_angle_prev)) / dt;
+        self.yaw_rate = 0.0;
 
         let alpha_dot = k * cross_track_err
             / (1.0 + (k * cross_track_err + c * self.integral_state).powi(2)).sqrt();
         self.integral_state += alpha_dot * dt;
+        self.integral_state = self
+            .integral_state
+            .clamp(-self.saturation_limit, self.saturation_limit);
     }
 
     pub fn set_gains(&mut self, prop_gain: f64, integral_gain: f64) {

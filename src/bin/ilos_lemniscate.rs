@@ -1,13 +1,15 @@
-use ilos_guidance::{ilos::ILOS, paths::waypoint_path::WaypointPath, zenoh_tools::*};
+use ilos_guidance::{
+    ilos::ILOS,
+    paths::lemniscate::{BgdParameters, Lemniscate},
+    zenoh_tools::*,
+};
 
-// use zenoh::prelude::r#async::*;
 // use serde_derive::{Deserialize, Serialize};
 // use std::fmt;
 use std::sync::{Arc, Mutex};
 
 extern crate nalgebra as na;
 use na::Vector2;
-use serde::{Deserialize, Serialize};
 
 use clap::Parser;
 
@@ -15,31 +17,44 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Odometry subscriber topic name
-    #[arg(long, default_value = "rt/odom")]
+    #[arg(short, long, default_value = "blueboat/odom")]
     topic: String,
     /// Output ILOS message topic name
-    #[arg(long, default_value = "rt/yaw_refs")]
+    #[arg(short, long, default_value = "blueboat/yaw_refs")]
     topic_out: String,
-    /// Radius of the circle
-    #[arg(short, long, default_value_t = 3.0)]
-    radius: f64,
     /// Frequency of the controller
     #[arg(short, long, default_value_t = 100)]
     freq: u64,
+    /// Height of the lemniscate
+    #[arg(short, long, default_value_t = 10.0)]
+    height: f64,
+    /// Width of the lemniscate
+    #[arg(short, long, default_value_t = 15.0)]
+    width: f64,
+    /// Center of the lemniscate
+    #[arg(short, long, default_values_t = [0.0, 0.0])]
+    center: Vec<f64>,
+    /// Initial value for theta
+    #[arg(short, long, default_value_t = 0.0)]
+    theta_0: f64,
     /// ILOS proportional gain
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(short, long, default_value_t = 1.0)]
     kp: f64,
     /// ILOS integral gain
-    #[arg(long, default_value_t = 0.01)]
+    #[arg(short, long, default_value_t = 0.01)]
     ki: f64,
     /// ILOS saturation limit [m]
     #[arg(short, long, default_value_t = 10.0)]
     saturation_limit: f64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Waypoints {
-    points: Vec<Vector2<f64>>,
+    /// Max value of step size in BGD (initial guess)
+    #[arg(short, long, default_value_t = 0.1)]
+    s_bar: f64,
+    /// How much decrease is needed to accept next step in BGD
+    #[arg(short, long, default_value_t = 0.1)]
+    sigma: f64,
+    /// Scaling factor to decrease the step size in BGD
+    #[arg(short, long, default_value_t = 0.1)]
+    mu: f64,
 }
 
 #[tokio::main]
@@ -48,16 +63,16 @@ async fn main() {
     let topic_name = args.topic;
     let freq = args.freq;
     let output_topic_name = args.topic_out;
-    let circle_radius = args.radius;
-    // let circle_center = Vector2::new(args.center[0], args.center[1]);
+    let lemni_height = args.height;
+    let lemni_width = args.width;
+    let lemni_center = Vector2::new(args.center[0], args.center[1]);
     let kp = args.kp;
     let ki = args.ki;
     let saturation_limit = args.saturation_limit;
-
-    let f = std::fs::File::open("waypoints.yaml").expect("Could not open file.");
-    let waypoints: Waypoints = serde_yaml::from_reader(f).unwrap();
-
-    println!("Waypoints: {:?}", waypoints);
+    let theta_0 = args.theta_0;
+    let s_bar = args.s_bar;
+    let sigma = args.sigma;
+    let mu = args.mu;
 
     let param_topic = "ilos/params".to_string();
 
@@ -87,7 +102,13 @@ async fn main() {
         update_ilos_parameters(an_session, param_topic, an_ilos).await;
     });
 
-    let wp_path = WaypointPath::new(waypoints.points, circle_radius);
+    // let circle = Circle::new(radius, center, clockwise);
+
+    // let circle = Circle::new(circle_radius, circle_center, false);
+    // BGD parameters
+
+    let bgd_params = BgdParameters::new(s_bar, sigma, mu);
+    let lemniscate = Lemniscate::new(lemni_height, lemni_width, lemni_center, bgd_params);
 
     let an_session = session.clone();
     let an_ilos = arc_ilos.clone();
@@ -96,12 +117,13 @@ async fn main() {
     println!("dt: {}", dt);
 
     tokio::spawn(async move {
-        ilos_timer(
+        ilos_timer_lemniscate(
             an_session,
             output_topic_name,
             pos_measured,
             an_ilos,
-            wp_path,
+            lemniscate,
+            theta_0,
             dt,
         )
         .await;

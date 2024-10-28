@@ -1,4 +1,4 @@
-use crate::{ilos::ILOS, paths::path::Path};
+use crate::{ilos::ILOS, paths::lemniscate::Lemniscate, paths::path::Path};
 
 use cdr::{CdrLe, Infinite};
 use serde_derive::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 // use zenoh::publication::Publisher;
 use zenoh::bytes::Encoding;
 use zenoh::key_expr::KeyExpr;
-use zenoh::prelude::*;
+// use zenoh::prelude::*;
 use zenoh::pubsub::Publisher;
 use zenoh::Session;
 
@@ -16,7 +16,7 @@ extern crate nalgebra as na;
 use na::Vector2;
 
 pub async fn ilos_timer(
-    session: Arc<Session>,
+    session: Session,
     topic_name: String,
     arc_pos: Arc<Mutex<Option<Vector2<f64>>>>,
     ilos: Arc<Mutex<ILOS>>,
@@ -31,7 +31,7 @@ pub async fn ilos_timer(
 
         let pos = {
             let pos_guard = arc_pos.lock().unwrap();
-            if *pos_guard == None {
+            if (*pos_guard).is_none() {
                 continue;
             }
             pos_guard.unwrap()
@@ -46,6 +46,44 @@ pub async fn ilos_timer(
             ilos.get_references()
         };
         publish_ilos_message(&publisher, yaw, yaw_rate).await;
+    }
+}
+
+pub async fn ilos_timer_lemniscate(
+    session: Session,
+    topic_name: String,
+    arc_pos: Arc<Mutex<Option<Vector2<f64>>>>,
+    ilos: Arc<Mutex<ILOS>>,
+    path: Lemniscate,
+    theta_0: f64,
+    dt: f64,
+) {
+    let publisher = session.declare_publisher(topic_name).await.unwrap();
+    let mut theta_prev = theta_0;
+
+    let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
+    loop {
+        timer.tick().await;
+
+        let pos = {
+            let pos_guard = arc_pos.lock().unwrap();
+            if (*pos_guard).is_none() {
+                continue;
+            }
+            pos_guard.unwrap()
+        };
+        let theta = path.comp_theta_bgd(&pos, theta_prev);
+        let pos_desired = path.comp_pos(theta);
+        let tau_desired = path.comp_tangent(theta);
+
+        let (yaw, yaw_rate) = {
+            let mut ilos = ilos.lock().unwrap();
+            ilos.update(&pos, &pos_desired, &tau_desired, dt);
+            ilos.get_references()
+        };
+        publish_ilos_message(&publisher, yaw, yaw_rate).await;
+
+        theta_prev = theta;
     }
 }
 
@@ -74,7 +112,7 @@ pub async fn publish_ilos_message(publisher: &Publisher<'_>, yaw: f64, yaw_rate:
 }
 
 pub async fn position_subscriber(
-    session: Arc<Session>,
+    session: Session,
     topic_name: String,
     arc_pos: Arc<Mutex<Option<Vector2<f64>>>>,
 ) {
@@ -95,11 +133,7 @@ pub async fn position_subscriber(
     }
 }
 
-pub async fn update_ilos_parameters(
-    session: Arc<Session>,
-    key_expr: String,
-    ilos: Arc<Mutex<ILOS>>,
-) {
+pub async fn update_ilos_parameters(session: Session, key_expr: String, ilos: Arc<Mutex<ILOS>>) {
     let key_expr = KeyExpr::try_from(key_expr).unwrap();
 
     let (kp, ki) = {
@@ -125,8 +159,9 @@ pub async fn update_ilos_parameters(
         select!(
             sample = subscriber.recv_async() => {
                 let sample = sample.unwrap();
-                let data: Vec<u8> = sample.payload().deserialize().unwrap();
-                match serde_json::from_str(String::from_utf8(data).unwrap().as_str()) {
+                // let data: Vec<u8> = sample.payload().deserialize().unwrap();
+                // match serde_json::from_str(String::from_utf8(data).unwrap().as_str()) {
+                match serde_json::from_slice(&sample.payload().to_bytes()) {
                     Ok(params) => {
                         ilos_params = params;
                         let mut ilos = ilos.lock().unwrap();
@@ -143,8 +178,8 @@ pub async fn update_ilos_parameters(
                     Some(query_payload) => {
                         // Refer to z_bytes.rs to see how to deserialize different types of message
                         let deserialized_payload = query_payload
-                            .deserialize::<String>()
-                            .unwrap_or_else(|e| format!("{}", e));
+                        .try_to_string()
+                        .unwrap_or_else(|e| e.to_string().into());
                         println!(
                             ">> [Queryable ] Received Query '{}' with payload '{}'",
                             query.selector(),

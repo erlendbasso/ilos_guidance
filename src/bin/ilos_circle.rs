@@ -33,6 +33,9 @@ struct Args {
     /// ILOS integral gain
     #[arg(short, long, default_value_t = 0.01)]
     ki: f64,
+    /// ILOS saturation limit [m]
+    #[arg(short, long, default_value_t = 10.0)]
+    saturation_limit: f64,
 }
 
 #[tokio::main]
@@ -45,6 +48,7 @@ async fn main() {
     let circle_center = Vector2::new(args.center[0], args.center[1]);
     let kp = args.kp;
     let ki = args.ki;
+    let saturation_limit = args.saturation_limit;
 
     let param_topic = "ilos/params".to_string();
 
@@ -52,13 +56,10 @@ async fn main() {
     println!("Controller frequency: {}", freq);
     println!("Controller period: {}", 1 / freq);
 
-    let ilos = ILOS::new(kp, ki);
+    let ilos = ILOS::new(kp, ki, saturation_limit);
     let arc_ilos = Arc::new(Mutex::new(ilos));
 
-    let session = zenoh::open(zenoh::config::default())
-        .await
-        .unwrap()
-        .into_arc();
+    let session = zenoh::open(zenoh::Config::default()).await.unwrap();
 
     let pos_measured: Option<Vector2<f64>> = None;
     let arc_pos = Arc::new(Mutex::new(pos_measured));
