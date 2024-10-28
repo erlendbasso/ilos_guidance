@@ -20,13 +20,13 @@ impl Default for ILOS {
 }
 
 impl ILOS {
-    pub fn new(prop_gain: f64, integral_gain: f64, saturation_limit: f64) -> ILOS {
+    pub fn new(lookahead_distance: f64, integral_gain: f64, saturation_limit: f64) -> ILOS {
         ILOS {
             yaw_angle: 0.0,
             yaw_rate: 0.0,
             integral_state: 0.0,
             S: Matrix2::new(0.0, -1.0, 1.0, 0.0),
-            kp: prop_gain,
+            kp: 1.0 / lookahead_distance,
             ki: integral_gain,
             saturation_limit,
         }
@@ -60,13 +60,13 @@ impl ILOS {
             .clamp(-self.saturation_limit, self.saturation_limit);
     }
 
-    pub fn set_gains(&mut self, prop_gain: f64, integral_gain: f64) {
-        self.kp = prop_gain;
+    pub fn set_gains(&mut self, lookahead_distance: f64, integral_gain: f64) {
+        self.kp = 1.0 / lookahead_distance;
         self.ki = integral_gain;
     }
 
     pub fn get_gains(&self) -> (f64, f64) {
-        (self.kp, self.ki)
+        (1.0 / self.kp, self.ki)
     }
 
     pub fn get_references(&self) -> (f64, f64) {
