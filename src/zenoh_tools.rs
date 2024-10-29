@@ -1,4 +1,4 @@
-use crate::{ilos::ILOS, paths::lemniscate::Lemniscate, paths::path::Path};
+use crate::{ilos::ILOS, alos::ALOS, paths::lemniscate::Lemniscate, paths::path::Path};
 
 use cdr::{CdrLe, Infinite};
 use serde_derive::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ pub async fn ilos_timer(
     dt: f64,
 ) {
     let publisher = session.declare_publisher(topic_name).await.unwrap();
+    let pub_desired_pos_theta = session.declare_publisher("blueboat/desired_pos").await.unwrap();
 
     let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
     loop {
@@ -46,6 +47,8 @@ pub async fn ilos_timer(
             ilos.get_references()
         };
         publish_ilos_message(&publisher, yaw, yaw_rate).await;
+        publish_desired_pos_theta(&pub_desired_pos_theta, &pos_desired, theta).await;
+
     }
 }
 
@@ -59,6 +62,7 @@ pub async fn ilos_timer_lemniscate(
     dt: f64,
 ) {
     let publisher = session.declare_publisher(topic_name).await.unwrap();
+    let pub_desired_pos_theta = session.declare_publisher("blueboat/desired_pos").await.unwrap();
     let mut theta_prev = theta_0;
 
     let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
@@ -82,6 +86,47 @@ pub async fn ilos_timer_lemniscate(
             ilos.get_references()
         };
         publish_ilos_message(&publisher, yaw, yaw_rate).await;
+        publish_desired_pos_theta(&pub_desired_pos_theta, &pos_desired, theta).await;
+
+        theta_prev = theta;
+    }
+}
+
+pub async fn alos_timer_lemniscate(
+    session: Session,
+    topic_name: String,
+    arc_pos: Arc<Mutex<Option<Vector2<f64>>>>,
+    ilos: Arc<Mutex<ALOS>>,
+    path: Lemniscate,
+    theta_0: f64,
+    dt: f64,
+) {
+    let publisher = session.declare_publisher(topic_name).await.unwrap();
+    let pub_desired_pos_theta = session.declare_publisher("blueboat/desired_pos").await.unwrap();
+    let mut theta_prev = theta_0;
+
+    let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
+    loop {
+        timer.tick().await;
+
+        let pos = {
+            let pos_guard = arc_pos.lock().unwrap();
+            if (*pos_guard).is_none() {
+                continue;
+            }
+            pos_guard.unwrap()
+        };
+        let theta = path.comp_theta_bgd(&pos, theta_prev);
+        let pos_desired = path.comp_pos(theta);
+        let tau_desired = path.comp_tangent(theta);
+
+        let (yaw, yaw_rate) = {
+            let mut ilos = ilos.lock().unwrap();
+            ilos.update(&pos, &pos_desired, &tau_desired, dt);
+            ilos.get_references()
+        };
+        publish_ilos_message(&publisher, yaw, yaw_rate).await;
+        publish_desired_pos_theta(&pub_desired_pos_theta, &pos_desired, theta).await;
 
         theta_prev = theta;
     }
@@ -106,6 +151,30 @@ pub async fn publish_ilos_message(publisher: &Publisher<'_>, yaw: f64, yaw_rate:
     };
 
     let encoded = cdr::serialize::<_, _, CdrLe>(&ilos_msg, Infinite).unwrap();
+    if let Err(e) = publisher.put(encoded).await {
+        println!("Error writing {}: {}", publisher.key_expr().as_str(), e);
+    }
+}
+
+pub async fn publish_desired_pos_theta(publisher: &Publisher<'_>, pos: &Vector2<f64>, theta: f64) {
+    let t_now = std::time::SystemTime::now();
+    let since_epoch = t_now.duration_since(std::time::UNIX_EPOCH).unwrap();
+
+    // let header = Header {
+    //     stamp: Time {
+    //         sec: since_epoch.as_secs() as i32,
+    //         nanosec: since_epoch.subsec_nanos(),
+    //     },
+    //     frame_id: "".to_string(),
+    // };
+
+    let msg = ROSVector3 {
+        x: pos[0],
+        y: pos[1],
+        z: theta,
+    };
+
+    let encoded = cdr::serialize::<_, _, CdrLe>(&msg, Infinite).unwrap();
     if let Err(e) = publisher.put(encoded).await {
         println!("Error writing {}: {}", publisher.key_expr().as_str(), e);
     }

@@ -15,10 +15,10 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Odometry subscriber topic name
-    #[arg(long, default_value = "rt/odom")]
+    #[arg(short, long, default_value = "blueboat/odom")]
     topic: String,
     /// Output ILOS message topic name
-    #[arg(long, default_value = "rt/yaw_refs")]
+    #[arg(short, long, default_value = "blueboat/yaw_reference")]
     topic_out: String,
     /// Radius of the circle
     #[arg(short, long, default_value_t = 3.0)]

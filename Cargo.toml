@@ -33,3 +33,6 @@ required-features = ["zenoh"]
 [[bin]]
 name = "ilos_lemniscate"
 required-features = ["zenoh"]
+[[bin]]
+name = "alos_lemniscate"
+required-features = ["zenoh"]
