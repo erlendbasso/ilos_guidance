@@ -20,13 +20,13 @@ struct Args {
     #[arg(short, long, default_value = "blueboat/odom")]
     topic: String,
     /// Output ILOS message topic name
-    #[arg(short, long, default_value = "blueboat/yaw_reference")]
+    #[arg(long, default_value = "blueboat/yaw_reference")]
     topic_out: String,
     /// Frequency of the controller
     #[arg(short, long, default_value_t = 100)]
     freq: u64,
     /// Height of the lemniscate
-    #[arg(short, long, default_value_t = 10.0)]
+    #[arg(long, default_value_t = 10.0)]
     height: f64,
     /// Width of the lemniscate
     #[arg(short, long, default_value_t = 15.0)]
@@ -35,22 +35,22 @@ struct Args {
     #[arg(short, long, default_values_t = [0.0, 0.0])]
     center: Vec<f64>,
     /// Initial value for theta
-    #[arg(short, long, default_value_t = 0.0)]
+    #[arg(long, default_value_t = 0.0)]
     theta_0: f64,
     /// ILOS proportional gain
     #[arg(short, long, default_value_t = 1.0)]
     kp: f64,
     /// ILOS integral gain
-    #[arg(short, long, default_value_t = 0.01)]
+    #[arg(long, default_value_t = 0.0)]
     ki: f64,
     /// ILOS saturation limit [m]
-    #[arg(short, long, default_value_t = 10.0)]
+    #[arg(long, default_value_t = 10.0)]
     saturation_limit: f64,
     /// Max value of step size in BGD (initial guess)
     #[arg(short, long, default_value_t = 0.1)]
     s_bar: f64,
     /// How much decrease is needed to accept next step in BGD
-    #[arg(short, long, default_value_t = 0.1)]
+    #[arg(long, default_value_t = 0.1)]
     sigma: f64,
     /// Scaling factor to decrease the step size in BGD
     #[arg(short, long, default_value_t = 0.1)]

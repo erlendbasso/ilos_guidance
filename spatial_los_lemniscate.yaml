@@ -1,0 +1,28 @@
+# Spatial LOS Lemniscate configuration
+# All values are examples; adjust to your system
+
+# Input odometry topic
+topic: snake/odom
+
+# Output LOS publisher topic
+topic_out: snake/spatial_los
+
+# Controller frequency (Hz)
+freq: 100
+
+# Lemniscate shape parameters
+height: 10.0         # x half-width
+width: 15.0          # y half-width
+amplitude: 2.0       # z oscillation amplitude
+center: [0.0, 0.0, 5.0]  # 3D center; z acts as offset
+
+# Initial theta on the path
+theta_0: 0.0
+
+# LOS lookahead distance (m)
+delta: 5.0
+
+# Backtracking gradient descent (BGD) parameters
+s_bar: 0.1
+sigma: 0.1
+mu: 0.1

@@ -1,4 +1,7 @@
-use crate::{ilos::ILOS, alos::ALOS, paths::lemniscate::Lemniscate, paths::path::Path};
+use crate::{
+    alos::ALOS, ilos::ILOS, los::LOS, paths::lemniscate::Lemniscate, paths::path::Path,
+    paths::spatial_lemniscate::SpatialLemniscate,
+};
 
 use cdr::{CdrLe, Infinite};
 use serde_derive::{Deserialize, Serialize};
@@ -13,7 +16,7 @@ use zenoh::Session;
 
 use tokio::select;
 extern crate nalgebra as na;
-use na::Vector2;
+use na::{Unit, UnitVector3, Vector2, Vector3};
 
 pub async fn ilos_timer(
     session: Session,
@@ -24,7 +27,10 @@ pub async fn ilos_timer(
     dt: f64,
 ) {
     let publisher = session.declare_publisher(topic_name).await.unwrap();
-    let pub_desired_pos_theta = session.declare_publisher("blueboat/desired_pos").await.unwrap();
+    let pub_desired_pos_theta = session
+        .declare_publisher("blueboat/desired_pos")
+        .await
+        .unwrap();
 
     let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
     loop {
@@ -48,7 +54,6 @@ pub async fn ilos_timer(
         };
         publish_ilos_message(&publisher, yaw, yaw_rate).await;
         publish_desired_pos_theta(&pub_desired_pos_theta, &pos_desired, theta).await;
-
     }
 }
 
@@ -62,7 +67,10 @@ pub async fn ilos_timer_lemniscate(
     dt: f64,
 ) {
     let publisher = session.declare_publisher(topic_name).await.unwrap();
-    let pub_desired_pos_theta = session.declare_publisher("blueboat/desired_pos").await.unwrap();
+    let pub_desired_pos_theta = session
+        .declare_publisher("blueboat/desired_pos")
+        .await
+        .unwrap();
     let mut theta_prev = theta_0;
 
     let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
@@ -92,6 +100,48 @@ pub async fn ilos_timer_lemniscate(
     }
 }
 
+pub async fn spatial_los_timer_lemniscate(
+    session: Session,
+    topic_name: String,
+    arc_pos: Arc<Mutex<Option<Vector3<f64>>>>,
+    los: Arc<Mutex<LOS<3>>>,
+    path: SpatialLemniscate,
+    theta_0: f64,
+    dt: f64,
+) {
+    let publisher = session.declare_publisher(topic_name).await.unwrap();
+    let pub_desired_pos = session
+        .declare_publisher("snake/desired_pos")
+        .await
+        .unwrap();
+    let mut theta_prev = theta_0;
+
+    let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
+    loop {
+        timer.tick().await;
+
+        let pos = {
+            let pos_guard = arc_pos.lock().unwrap();
+            if (*pos_guard).is_none() {
+                continue;
+            }
+            pos_guard.unwrap()
+        };
+        let theta = path.comp_theta_bgd(&pos, theta_prev);
+        let pos_desired = path.comp_pos(theta);
+        let tau_desired = path.comp_tangent(theta);
+
+        let mu = {
+            let mut los = los.lock().unwrap();
+            los.update(&pos, &pos_desired, &tau_desired)
+        };
+        publish_spatial_los_message(&publisher, &mu).await;
+        publish_desired_spatial_pos(&pub_desired_pos, &pos_desired).await;
+
+        theta_prev = theta;
+    }
+}
+
 pub async fn alos_timer_lemniscate(
     session: Session,
     topic_name: String,
@@ -102,7 +152,10 @@ pub async fn alos_timer_lemniscate(
     dt: f64,
 ) {
     let publisher = session.declare_publisher(topic_name).await.unwrap();
-    let pub_desired_pos_theta = session.declare_publisher("blueboat/desired_pos").await.unwrap();
+    let pub_desired_pos_theta = session
+        .declare_publisher("blueboat/desired_pos")
+        .await
+        .unwrap();
     let mut theta_prev = theta_0;
 
     let mut timer = tokio::time::interval(tokio::time::Duration::from_secs_f64(dt));
@@ -156,6 +209,36 @@ pub async fn publish_ilos_message(publisher: &Publisher<'_>, yaw: f64, yaw_rate:
     }
 }
 
+pub async fn publish_spatial_los_message(
+    publisher: &Publisher<'_>,
+    reduced_orientation: &Unit<Vector3<f64>>,
+) {
+    let t_now = std::time::SystemTime::now();
+    let since_epoch = t_now.duration_since(std::time::UNIX_EPOCH).unwrap();
+
+    let header = Header {
+        stamp: Time {
+            sec: since_epoch.as_secs() as i32,
+            nanosec: since_epoch.subsec_nanos(),
+        },
+        frame_id: "".to_string(),
+    };
+
+    let los_msg = SpatialLOSMessage {
+        header,
+        reduced_orientation: ROSVector3 {
+            x: reduced_orientation[0],
+            y: reduced_orientation[1],
+            z: reduced_orientation[2],
+        },
+    };
+
+    let encoded = cdr::serialize::<_, _, CdrLe>(&los_msg, Infinite).unwrap();
+    if let Err(e) = publisher.put(encoded).await {
+        println!("Error writing {}: {}", publisher.key_expr().as_str(), e);
+    }
+}
+
 pub async fn publish_desired_pos_theta(publisher: &Publisher<'_>, pos: &Vector2<f64>, theta: f64) {
     let t_now = std::time::SystemTime::now();
     let since_epoch = t_now.duration_since(std::time::UNIX_EPOCH).unwrap();
@@ -180,6 +263,30 @@ pub async fn publish_desired_pos_theta(publisher: &Publisher<'_>, pos: &Vector2<
     }
 }
 
+pub async fn publish_desired_spatial_pos(publisher: &Publisher<'_>, pos: &Vector3<f64>) {
+    let t_now = std::time::SystemTime::now();
+    let since_epoch = t_now.duration_since(std::time::UNIX_EPOCH).unwrap();
+
+    // let header = Header {
+    //     stamp: Time {
+    //         sec: since_epoch.as_secs() as i32,
+    //         nanosec: since_epoch.subsec_nanos(),
+    //     },
+    //     frame_id: "".to_string(),
+    // };
+
+    let msg = ROSVector3 {
+        x: pos[0],
+        y: pos[1],
+        z: pos[2],
+    };
+
+    let encoded = cdr::serialize::<_, _, CdrLe>(&msg, Infinite).unwrap();
+    if let Err(e) = publisher.put(encoded).await {
+        println!("Error writing {}: {}", publisher.key_expr().as_str(), e);
+    }
+}
+
 pub async fn position_subscriber(
     session: Session,
     topic_name: String,
@@ -194,6 +301,32 @@ pub async fn position_subscriber(
         ) {
             Ok(odom) => {
                 let pos = Vector2::new(odom.pose.pose.position.x, odom.pose.pose.position.y);
+                let mut pos_ref = arc_pos.lock().unwrap();
+                *pos_ref = Some(pos);
+            }
+            Err(e) => println!("Error decoding Odometry msg: {}", e),
+        }
+    }
+}
+
+pub async fn spatial_position_subscriber(
+    session: Session,
+    topic_name: String,
+    arc_pos: Arc<Mutex<Option<Vector3<f64>>>>,
+) {
+    let subscriber = session.declare_subscriber(topic_name).await.unwrap();
+
+    while let Ok(sample) = subscriber.recv_async().await {
+        match cdr::deserialize_from::<_, Odometry, _>(
+            sample.payload().reader(),
+            cdr::size::Infinite,
+        ) {
+            Ok(odom) => {
+                let pos = Vector3::new(
+                    odom.pose.pose.position.x,
+                    odom.pose.pose.position.y,
+                    odom.pose.pose.position.z,
+                );
                 let mut pos_ref = arc_pos.lock().unwrap();
                 *pos_ref = Some(pos);
             }
@@ -348,6 +481,12 @@ struct ILOSMessage {
     header: Header,
     yaw: f64,
     yaw_rate: f64,
+}
+
+#[derive(Serialize, Deserialize, PartialEq)]
+struct SpatialLOSMessage {
+    header: Header,
+    reduced_orientation: ROSVector3,
 }
 
 #[derive(Deserialize, PartialEq)]

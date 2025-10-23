@@ -1,14 +1,14 @@
 use ilos_guidance::{
-    ilos::ILOS,
     alos::ALOS,
+    ilos::ILOS,
     paths::lemniscate::{BgdParameters, Lemniscate},
     zenoh_tools::*,
 };
 
 // use serde_derive::{Deserialize, Serialize};
 // use std::fmt;
-use std::sync::{Arc, Mutex};
 use core::f64::consts::PI;
+use std::sync::{Arc, Mutex};
 
 extern crate nalgebra as na;
 use na::Vector2;
@@ -19,11 +19,11 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Odometry subscriber topic name
-    #[arg(short, long, default_value = "blueboat/odom")]
+    #[arg(long, default_value = "blueboat/odom")]
     topic: String,
     /// Output ILOS message topic name
-    #[arg(short, long, default_value = "blueboat/yaw_reference")]
-    topic_out: String,
+    #[arg(long, default_value = "blueboat/yaw_reference")]
+    yaw_ref_topic: String,
     /// Frequency of the controller
     #[arg(short, long, default_value_t = 100)]
     freq: u64,
@@ -64,13 +64,13 @@ async fn main() {
     let args = Args::parse();
     let topic_name = args.topic;
     let freq = args.freq;
-    let output_topic_name = args.topic_out;
+    let output_topic_name = args.yaw_ref_topic;
     let lemni_height = args.height;
     let lemni_width = args.width;
     let lemni_center = Vector2::new(args.center[0], args.center[1]);
     let kp = args.kp;
     let ki = args.ki;
-    let saturation_limit = PI / 180.0 *  args.saturation_limit;
+    let saturation_limit = PI / 180.0 * args.saturation_limit;
     let theta_0 = args.theta_0;
     let s_bar = args.s_bar;
     let sigma = args.sigma;

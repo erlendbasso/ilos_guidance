@@ -2,9 +2,7 @@ extern crate nalgebra as na;
 
 use std::f64::consts::SQRT_2;
 
-use na::{UnitVector2, Vector2};
-
-use crate::paths::path::Path;
+use na::{UnitVector3, Vector3};
 
 #[derive(Clone, Copy)]
 pub struct BgdParameters {
@@ -20,31 +18,34 @@ impl BgdParameters {
 }
 
 #[derive(Clone, Copy)]
-pub struct Lemniscate {
-    height: f64,         // half of the height of the lemniscate
-    width: f64,          // half of the width of the lemniscate
-    pos_0: Vector2<f64>, // center of the lemniscate
+pub struct SpatialLemniscate {
+    height: f64,         // half of the height of the lemniscate (x-direction)
+    width: f64,          // half of the width of the lemniscate (y-direction)
+    amplitude: f64,      // amplitude of the sinusoidal z-component
+    pos_0: Vector3<f64>, // center of the lemniscate
 
     // Backtracking gradient descent parameters
     bgd_parameters: BgdParameters,
 }
 
-impl Lemniscate {
+impl SpatialLemniscate {
     pub fn new(
         height: f64,
         width: f64,
-        pos_0: Vector2<f64>,
+        amplitude: f64,
+        pos_0: Vector3<f64>,
         bgd_parameters: BgdParameters,
-    ) -> Lemniscate {
-        Lemniscate {
+    ) -> SpatialLemniscate {
+        SpatialLemniscate {
             height,
             width,
+            amplitude,
             pos_0,
             bgd_parameters,
         }
     }
 
-    fn comp_derivative(&self, theta: f64) -> Vector2<f64> {
+    fn comp_derivative(&self, theta: f64) -> Vector3<f64> {
         let x = 2.0
             * self.height
             * ((2.0 * SQRT_2 * f64::cos(2.0 * theta)) / (1.0 + f64::powi(f64::sin(theta), 2))
@@ -60,12 +61,13 @@ impl Lemniscate {
                     * f64::sin(theta)
                     * (f64::cos(theta) / f64::powi(1.0 + f64::powi(f64::sin(theta), 2), 2))
                     * f64::cos(theta));
+        let z = self.amplitude * f64::cos(theta);
 
-        Vector2::new(x, y)
+        Vector3::new(x, y, z)
     }
 
-    fn backtracking_gradient_descent(&self, pos: Vector2<f64>, theta_0: f64) -> f64 {
-        let along_track_error = |pos: &Vector2<f64>, theta: f64| -> f64 {
+    fn backtracking_gradient_descent(&self, pos: Vector3<f64>, theta_0: f64) -> f64 {
+        let along_track_error = |pos: &Vector3<f64>, theta: f64| -> f64 {
             (pos - self.comp_pos(theta)).dot(&self.comp_derivative(theta).normalize())
         };
 
@@ -92,25 +94,21 @@ impl Lemniscate {
         theta
     }
 
-    pub fn comp_theta_bgd(&self, pos: &Vector2<f64>, theta_0: f64) -> f64 {
+    pub fn comp_theta_bgd(&self, pos: &Vector3<f64>, theta_0: f64) -> f64 {
         self.backtracking_gradient_descent(*pos, theta_0)
     }
-}
 
-impl Path for Lemniscate {
-    fn comp_theta(&mut self, _pos: &Vector2<f64>) -> f64 {
-        unimplemented!()
-    }
-
-    fn comp_pos(&self, theta: f64) -> Vector2<f64> {
+    pub fn comp_pos(&self, theta: f64) -> Vector3<f64> {
         let denominator = 1.0 + f64::powi(f64::sin(theta), 2);
         let x = 2.0 * self.height * f64::sqrt(2.0) * f64::sin(2.0 * theta) / denominator;
         let y = 2.0 * self.width * f64::cos(theta) / denominator;
+        // z-offset is encoded in pos_0.z; only the oscillatory term remains here.
+        let z = self.amplitude * f64::sin(theta);
 
-        Vector2::new(x, y) + self.pos_0
+        Vector3::new(x, y, z) + self.pos_0
     }
 
-    fn comp_tangent(&self, theta: f64) -> UnitVector2<f64> {
+    pub fn comp_tangent(&self, theta: f64) -> UnitVector3<f64> {
         let x = 2.0
             * self.height
             * ((2.8284271247461903 * f64::cos(2.0 * theta))
@@ -127,8 +125,9 @@ impl Path for Lemniscate {
                     * f64::sin(theta)
                     * (f64::cos(theta) / f64::powi(1.0 + f64::powi(f64::sin(theta), 2), 2))
                     * f64::cos(theta));
+        let z = self.amplitude * f64::cos(theta);
 
-        UnitVector2::new_normalize(Vector2::new(x, y))
+        UnitVector3::new_normalize(Vector3::new(x, y, z))
     }
 }
 
@@ -136,12 +135,22 @@ impl Path for Lemniscate {
 mod tests {
     use super::*;
 
-    // #[test]
-    // fn test_lemniscate() {
-    //     let lemniscate = Lemniscate::new(0.5, 0.5, Vector2::new(0.0, 0.0));
-    //     let pos = lemniscate.comp_pos(13.37);
-    //     let tang = lemniscate.comp_tangent(13.37);
+    #[test]
+    fn test_spatial_lemniscate_z_component() {
+        let lemniscate = SpatialLemniscate::new(
+            0.5,
+            0.5,
+            1.0,
+            Vector3::new(0.0, 0.0, 2.0),
+            BgdParameters::new(1.0, 0.1, 0.5),
+        );
 
-    //     assert_eq!(pos, Vector2::new(0.9308709375969799, 0.4571770103950108));
-    // }
+        // At theta = 0, sin(0) = 0, so z should be pos_0.z + 0 = 2.0
+        let pos_0 = lemniscate.comp_pos(0.0);
+        assert!((pos_0.z - 2.0).abs() < 1e-10);
+
+        // At theta = π/2, sin(π/2) = 1, so z should be pos_0.z + amplitude = 3.0
+        let pos_pi2 = lemniscate.comp_pos(std::f64::consts::FRAC_PI_2);
+        assert!((pos_pi2.z - 3.0).abs() < 1e-10);
+    }
 }
