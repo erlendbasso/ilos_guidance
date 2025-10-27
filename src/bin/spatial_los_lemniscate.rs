@@ -25,6 +25,9 @@ struct Args {
     /// Output spatial LOS message topic name
     #[arg(long, default_value = "snake/spatial_los")]
     topic_out: String,
+    /// Roll reference topic providing std_msgs/Float64 data
+    #[arg(long, default_value = "snake/desired_roll")]
+    roll_topic: String,
     /// Frequency of the controller
     #[arg(short, long, default_value_t = 100)]
     freq: u64,
@@ -61,6 +64,7 @@ struct Args {
 struct SpatialLemniscateConfig {
     topic: String,
     topic_out: String,
+    roll_topic: String,
     freq: u64,
     height: f64,
     width: f64,
@@ -88,6 +92,7 @@ async fn main() {
     let (
         topic_name,
         output_topic_name,
+        roll_topic,
         freq,
         lemni_height,
         lemni_width,
@@ -103,6 +108,7 @@ async fn main() {
         (
             cfg.topic,
             cfg.topic_out,
+            cfg.roll_topic,
             cfg.freq,
             cfg.height,
             cfg.width,
@@ -118,6 +124,7 @@ async fn main() {
         (
             args.topic,
             args.topic_out,
+            args.roll_topic,
             args.freq,
             args.height,
             args.width,
@@ -135,6 +142,7 @@ async fn main() {
     println!("Controller frequency: {}", freq);
     println!("Controller period: {}", 1.0 / (freq as f64));
     println!("Lookahead distance: {}", delta);
+    println!("Roll reference topic: {}", roll_topic);
 
     let los = LOS::<3>::new(delta);
     let arc_los = Arc::new(Mutex::new(los));
@@ -151,6 +159,14 @@ async fn main() {
         spatial_position_subscriber(an_session, topic_name, pos_measured).await;
     });
 
+    let roll_value: Arc<Mutex<Option<f64>>> = Arc::new(Mutex::new(None));
+    let roll_session = session.clone();
+    let roll_topic_clone = roll_topic.clone();
+    let roll_shared = roll_value.clone();
+    tokio::spawn(async move {
+        roll_subscriber(roll_session, roll_topic_clone, roll_shared).await;
+    });
+
     // BGD parameters
     let bgd_params = BgdParameters::new(s_bar, sigma, mu);
     let lemniscate = SpatialLemniscate::new(
@@ -164,6 +180,7 @@ async fn main() {
     let an_session = session.clone();
     let an_los = arc_los.clone();
     let pos_measured = arc_pos.clone();
+    let roll_ref = roll_value.clone();
     let dt = 1.0 / (freq as f64);
     println!("dt: {}", dt);
 
@@ -176,6 +193,7 @@ async fn main() {
             lemniscate,
             theta_0,
             dt,
+            roll_ref,
         )
         .await;
     })

@@ -16,7 +16,7 @@ use zenoh::Session;
 
 use tokio::select;
 extern crate nalgebra as na;
-use na::{Unit, UnitVector3, Vector2, Vector3};
+use na::{Unit, UnitQuaternion, Vector2, Vector3};
 
 pub async fn ilos_timer(
     session: Session,
@@ -108,6 +108,7 @@ pub async fn spatial_los_timer_lemniscate(
     path: SpatialLemniscate,
     theta_0: f64,
     dt: f64,
+    roll_ref: Arc<Mutex<Option<f64>>>,
 ) {
     let publisher = session.declare_publisher(topic_name).await.unwrap();
     let pub_desired_pos = session
@@ -137,6 +138,16 @@ pub async fn spatial_los_timer_lemniscate(
         };
         publish_spatial_los_message(&publisher, &mu).await;
         publish_desired_spatial_pos(&pub_desired_pos, &pos_desired).await;
+
+        let roll_desired = {
+            let roll_guard = roll_ref.lock().unwrap();
+            roll_guard.unwrap_or(0.0)
+        };
+        let yaw_desired = mu[1].atan2(mu[0]);
+        let pitch_desired = -f64::asin(mu[2].clamp(-1.0, 1.0));
+        let orientation_desired =
+            UnitQuaternion::from_euler_angles(roll_desired, pitch_desired, yaw_desired);
+        publish_reference_message(&publisher, &orientation_desired).await;
 
         theta_prev = theta;
     }
@@ -287,6 +298,53 @@ pub async fn publish_desired_spatial_pos(publisher: &Publisher<'_>, pos: &Vector
     }
 }
 
+pub async fn publish_reference_message(
+    publisher: &Publisher<'_>,
+    orientation: &UnitQuaternion<f64>,
+) {
+    let t_now = std::time::SystemTime::now();
+    let since_epoch = t_now.duration_since(std::time::UNIX_EPOCH).unwrap();
+
+    let header = Header {
+        stamp: Time {
+            sec: since_epoch.as_secs() as i32,
+            nanosec: since_epoch.subsec_nanos(),
+        },
+        frame_id: "".to_string(),
+    };
+
+    let zero_vec = || ROSVector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+
+    let zero_twist = || Twist {
+        linear: zero_vec(),
+        angular: zero_vec(),
+    };
+
+    let q = orientation.clone().into_inner();
+
+    let reference_msg = ReferenceMessage {
+        header,
+        pos: zero_vec(),
+        quat: Quaternion {
+            x: q.i,
+            y: q.j,
+            z: q.k,
+            w: q.w,
+        },
+        velocity: zero_twist(),
+        acceleration: zero_twist(),
+    };
+
+    let encoded = cdr::serialize::<_, _, CdrLe>(&reference_msg, Infinite).unwrap();
+    if let Err(e) = publisher.put(encoded).await {
+        println!("Error writing {}: {}", publisher.key_expr().as_str(), e);
+    }
+}
+
 pub async fn position_subscriber(
     session: Session,
     topic_name: String,
@@ -331,6 +389,27 @@ pub async fn spatial_position_subscriber(
                 *pos_ref = Some(pos);
             }
             Err(e) => println!("Error decoding Odometry msg: {}", e),
+        }
+    }
+}
+
+pub async fn roll_subscriber(
+    session: Session,
+    topic_name: String,
+    roll_ref: Arc<Mutex<Option<f64>>>,
+) {
+    let subscriber = session.declare_subscriber(topic_name).await.unwrap();
+
+    while let Ok(sample) = subscriber.recv_async().await {
+        match cdr::deserialize_from::<_, Float64Msg, _>(
+            sample.payload().reader(),
+            cdr::size::Infinite,
+        ) {
+            Ok(msg) => {
+                let mut roll_guard = roll_ref.lock().unwrap();
+                *roll_guard = Some(msg.data);
+            }
+            Err(e) => println!("Error decoding Float64 msg: {}", e),
         }
     }
 }
@@ -405,6 +484,11 @@ pub async fn update_ilos_parameters(session: Session, key_expr: String, ilos: Ar
 struct ILOSParameters {
     proportional_gain: f64,
     integral_gain: f64,
+}
+
+#[derive(Deserialize, Serialize, PartialEq, Debug)]
+struct Float64Msg {
+    data: f64,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
@@ -487,6 +571,15 @@ struct ILOSMessage {
 struct SpatialLOSMessage {
     header: Header,
     reduced_orientation: ROSVector3,
+}
+
+#[derive(Serialize, Deserialize, PartialEq)]
+struct ReferenceMessage {
+    header: Header,
+    pos: ROSVector3,
+    quat: Quaternion,
+    velocity: Twist,
+    acceleration: Twist,
 }
 
 #[derive(Deserialize, PartialEq)]

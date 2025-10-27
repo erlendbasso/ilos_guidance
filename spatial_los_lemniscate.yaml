@@ -7,6 +7,9 @@ topic: snake/odom
 # Output LOS publisher topic
 topic_out: snake/spatial_los
 
+# Roll reference topic (std_msgs/Float64)
+roll_topic: snake/desired_roll
+
 # Controller frequency (Hz)
 freq: 100
 
